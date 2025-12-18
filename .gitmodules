@@ -1,0 +1,3 @@
+[submodule "dvp_obv_obv"]
+	path = src/obv
+	url = git@github.com:stark-os/dvp_obv_obv

@@ -34,10 +34,7 @@ def main():
 	or_ = Obv_Run_init(filepath)
 
 	#run
-	while True:
-		or_.draw()
-		input()
-		or_.run()
+	or_.mainLoop()
 
 #run main
 main()
