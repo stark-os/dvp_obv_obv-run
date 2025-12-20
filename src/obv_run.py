@@ -58,7 +58,6 @@ SEG_NAMES = ("DATA", "HEAP", "STACK")
 SEG_SIZES = [     0,   1024,    1024] #in bytes, "DATA" size will be set at init
 
 #display: spacing
-SEP_LINE_PADDING   = 0 #2
 SPACE_BETWEEN_COLM = 3 #6
 
 #display: seg colms
@@ -79,7 +78,8 @@ CHK_COLORS = (
 UPDATE_DIMENSIONS_ON_KEYPRESS = True
 
 #display: pannels
-LEFT_PANNEL_WIDTH_RATIO_X = 0.25
+LEFT_PANNEL_WIDTH_RATIO_X  = 0.25
+RIGHT_PANNEL_WIDTH_RATIO_X = 0.75
 
 
 
@@ -167,12 +167,13 @@ class obvRun:
 		sbj.segs_maxLineShift = [0] * len(SEG_NAMES)
 
 		#display
-		sbj.width           = 0
-		sbj.height          = 0
-		sbj.midH            = 0
-		sbj.curChkColor     = 0
-		sbj.rowPerColm      = 0
-		sbj.leftPannel_maxX = 0
+		sbj.width            = 0
+		sbj.height           = 0
+		sbj.midH             = 0
+		sbj.curChkColor      = 0
+		sbj.rowPerColm       = 0
+		sbj.leftPannel_maxX  = 0
+		sbj.rightPannel_minX = 0
 		sbj.updateDimensions() #=> also update lineShifts
 
 		#CPU ctx
@@ -287,9 +288,6 @@ class obvRun:
 	def updateLineShifts(sbj):
 		for s in range(len(SEG_NAMES)):
 
-			#reset every lineShifts
-			sbj.segs_lineShift[s] = 0
-
 			#re-compute max lineShift
 			maxLineShift = 0
 			segLineNbr   = int(SEG_SIZES[s]/ARCH_SIZE)
@@ -298,6 +296,10 @@ class obvRun:
 
 			#update max lineShift
 			sbj.segs_maxLineShift[s] = maxLineShift
+
+			#if necessary, reset lineShift in its new range
+			if sbj.segs_lineShift[s] > maxLineShift:
+				sbj.segs_lineShift[s] = maxLineShift
 
 	def updateDimensions(sbj):
 
@@ -309,8 +311,9 @@ class obvRun:
 		#display: segments
 		sbj.rowPerColm  = sbj.height-5 #seg name, space, "..." on top & bottom
 
-		#display: pannels (all based on the left pannel width)
-		sbj.leftPannel_maxX = int(sbj.width * LEFT_PANNEL_WIDTH_RATIO_X)
+		#display: pannels
+		sbj.leftPannel_maxX  = int(sbj.width *  LEFT_PANNEL_WIDTH_RATIO_X)
+		sbj.rightPannel_minX = int(sbj.width * RIGHT_PANNEL_WIDTH_RATIO_X)
 
 		#update lineShifts also
 		sbj.updateLineShifts()
@@ -339,7 +342,7 @@ class obvRun:
 	#specific draw: ist pannel
 	def drawIstPannel(sbj):
 		output   = ""
-		ist_maxX = sbj.leftPannel_maxX - SEP_LINE_PADDING - 2 #ist starts 2 chr from the left
+		ist_maxX = sbj.leftPannel_maxX - 2 #ist starts 2 chr from the left
 
 		#blanks before code
 		if sbj.prgCnt < sbj.midH:
@@ -451,23 +454,33 @@ class obvRun:
 
 	#specific draw: regs
 	def drawRegs(sbj, col1X, col2X, y):
+		output   = Term__cup(col1X,0) + "[REGISTERS]"
+
+		#max X get over
+		col1_maxX = col2X-1
+		col2_maxX = sbj.width
 
 		#regs
-		output   = Term__cup(col1X,0) + "[REGISTERS]"
 		y       += 2
+		maxX     = col1_maxX
 		reg_keys = list(sbj.regs.keys())
 		for k in range(len(reg_keys)):
 
 			#on 2 colms
 			if k&1 == 0:
-				output += Term__cup(col1X,y)
+				x    = col1X
+				maxX = col1_maxX
 			else:
-				output += Term__cup(col2X,y)
+				x    = col2X
+				maxX = col2_maxX
 				y += 1
 
 			#reg
-			key     = reg_keys[k]
-			output += key + ' ' + hexOnN(sbj.regs[key], ARCH_SIZE)
+			key    = reg_keys[k]
+			regTxt = key + ' ' + hexOnN(sbj.regs[key], ARCH_SIZE)
+
+			#draw with potential cut at the end if doesn't fit
+			output += Term__cup(x,y) + str_sub(regTxt, stop=(maxX - x-1))
 
 		#height is useful for displaying further things under
 		return (output,y+1)
@@ -478,8 +491,13 @@ class obvRun:
 	def drawStackFrames(sbj, col1X, col2X, y):
 		output = ""
 
+		#max X get over
+		col1_maxX = col2X-1
+		col2_maxX = sbj.width
+
 		#stack frames
-		x = col1X
+		x    = col1X
+		maxX = col1_maxX
 		for sf in range(len(sbj.stackFrames)):
 			y += 1
 			output += Term__cup(x,y) + "[StackFrame" + str(sf) + ']'
@@ -494,17 +512,20 @@ class obvRun:
 			di_keys       = list(curStackFrame.keys())
 			for k in range(len(di_keys)):
 				di = curStackFrame[di_keys[k]]
-				output += Term__cup(x,y) + di.color + di.name + '/' + hexOnN(di.size, 4) + Term__STYLE_RESET
+				diTxt = di.name + '/' + hexOnN(di.size, 4)
+				output += Term__cup(x,y) + di.color + str_sub(diTxt, stop=(maxX - x-1)) + Term__STYLE_RESET
 				y += 1
 
 				#switching colm
 				if k&1 == 0:
-					y1 = y
-					y  = y2
-					x  = col2X
+					y1   = y
+					y    = y2
+					x    = col2X
+					maxX = col2_maxX
 				else:
-					y2 = y
-					x  = col1X
+					y2   = y
+					x    = col1X
+					maxX = col1_maxX
 
 		#y is useful for displaying further things under
 		return (output,y)
@@ -523,30 +544,56 @@ class obvRun:
 		#sep line
 		output += sbj.drawVertLine(sbj.leftPannel_maxX)
 
-		#dat seg
-		x = sbj.leftPannel_maxX + 1 + SEP_LINE_PADDING
+		#check whether we have enough place to displat at least one seg
+		minX = sbj.leftPannel_maxX + 1
+		maxX = minX + SPACE_BETWEEN_COLM + COLM_LEN
+		if maxX >= sbj.rightPannel_minX:
+			return
+
+		#prepare segs maxX as we were drawing all of them
+		segs_maxX = []
 		for s in range(len(sbj.segs)):
+			segs_maxX.append(maxX)
+			maxX += SPACE_BETWEEN_COLM + COLM_LEN
+
+		#as long as focused seg is not visible, rm the first seg from display
+		segsToDraw = len(sbj.segs) #first, considering drawing all segs
+		segOffset  = 0             #nbr or seg to skip drawing
+		while segs_maxX[sbj.segFocus - segOffset] > sbj.rightPannel_minX:
+			segOffset  += 1
+			segsToDraw -= 1
+			if segOffset > sbj.segFocus: #too small => no seg to draw finally
+				break
+
+		#tricky trick: adding minX as 1st elm makes it a minX lst => can be used for display then!
+		segs_maxX = [minX] + segs_maxX
+
+		#draw concerned segs until they no longer fit in display
+		for s in range(segsToDraw):
+			if segs_maxX[s+1] >= sbj.rightPannel_minX:
+				break
+
+			#still fitting => draw
+			segIdx  = segOffset + s
 			output += sbj.drawSeg(
-				sbj.segs[s],
-				x,
-				sbj.segs_lineShift[s],
-				s == sbj.segFocus
+				sbj.segs[segIdx],
+				segs_maxX[s],
+				sbj.segs_lineShift[segIdx],
+				segIdx == sbj.segFocus
 			)
-			x += SPACE_BETWEEN_COLM + COLM_LEN
 
 		#sep line
-		output += sbj.drawVertLine(x)
-		x      += 1 + SEP_LINE_PADDING
+		output += sbj.drawVertLine(sbj.rightPannel_minX)
 
 		#next displays will be split in 2 colms
-		secondColmX = (sbj.width + x)>>1
+		secondColmX = (sbj.width + sbj.rightPannel_minX)>>1
 
 		#regs
-		o,y = sbj.drawRegs(x, secondColmX, 0)
+		o,y = sbj.drawRegs(sbj.rightPannel_minX+1, secondColmX, 0)
 		output += o
 
 		#stack frames right under
-		o,y = sbj.drawStackFrames(x, secondColmX, y)
+		o,y = sbj.drawStackFrames(sbj.rightPannel_minX+1, secondColmX, y)
 		output += o
 
 		#draw
