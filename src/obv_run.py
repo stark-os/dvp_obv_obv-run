@@ -72,13 +72,13 @@ CHK_COLORS = (
 	Term__FCOLOR_WHITE + Term__BCOLOR_ORANGE,
 	Term__FCOLOR_BLACK + Term__BCOLOR_LGREEN
 )
-PERMANENT_FIRST_LINES = 3
-PERMANENT_LAST_LINES  = 3
 
-#display: sep
-SEP_LINE_PADDING = 2
-SEP_LINE_1_X     = 60
-SEP_LINE_2_INV_X = 85 #real X will be width-X
+#display: dynamic
+UPDATE_DIMENSIONS_ON_KEYPRESS = True
+
+#display: pannels
+SEP_LINE_PADDING          = 2
+LEFT_PANNEL_WIDTH_RATIO_X = 0.3
 
 
 
@@ -139,12 +139,18 @@ def Obv_Run_init(filename):
 class obvRun:
 	def __init__(sbj, oxes, fctMap):
 
-		#display
-		sbj.width       = Term__width()
-		sbj.height      = Term__height()
-		sbj.midH        = int(sbj.height/2)-1
+		#display: general
+		sbj.width  = 0
+		sbj.height = 0
+		sbj.midH   = 0
+		sbj.updateDimensions()
+
+		#display: mem seg colms
 		sbj.curChkColor = 0
 		sbj.rowPerColm  = sbj.height-5 #seg name, space, "..." on top & bottom
+
+		#display: pannels (all based on the left pannel width
+		sbj.leftPannel_maxX = int(sbj.width * LEFT_PANNEL_WIDTH_RATIO_X)
 
 		#dat seg spc
 		sbj.datSegIdx     = sbj.getSegIdxByName("DATA")
@@ -248,6 +254,8 @@ class obvRun:
 	#main
 	def mainLoop(sbj):
 		while True:
+			if UPDATE_DIMENSIONS_ON_KEYPRESS:
+				sbj.updateDimensions()
 			sbj.draw()
 			k = getChr()
 
@@ -284,6 +292,14 @@ class obvRun:
 
 	# -------- DISPLAY --------
 
+	#dynamic resize
+	def updateDimensions(sbj):
+		sbj.width  = Term__width()
+		sbj.height = Term__height()
+		sbj.midH   = int(sbj.height/2)-1
+
+
+
 	#coloration
 	def pickChkColor(sbj):
 		res = CHK_COLORS[sbj.curChkColor]
@@ -304,9 +320,9 @@ class obvRun:
 
 
 	#specific draw: ist pannel
-	def drawIstPannel(sbj, widthMax):
-		output      = ""
-		istWidthMax = widthMax-8
+	def drawIstPannel(sbj):
+		output   = ""
+		ist_maxX = sbj.leftPannel_maxX - SEP_LINE_PADDING - 2 #ist starts 2 chr from the left
 
 		#blanks before code
 		if sbj.prgCnt < sbj.midH:
@@ -317,17 +333,26 @@ class obvRun:
 
 		#code before cur idx
 		for i in range(exesBefore,0,-1):
-			output += "  " + str_sub( sbj.oxes[sbj.prgCnt-i].unparse(), stop=istWidthMax) + '\n'
+			output += "  " + str_sub(
+				sbj.oxes[sbj.prgCnt-i].unparse().replace('\t', ' '),
+				stop=ist_maxX
+			) + '\n'
 
 		#cur ist
-		output += "> " + str_sub( sbj.oxes[sbj.prgCnt].unparse(), stop=istWidthMax) + '\n'
+		output += "> " + str_sub(
+			sbj.oxes[sbj.prgCnt].unparse().replace('\t', ' '),
+			stop=ist_maxX
+		) + '\n'
 
 		#code after cur idx
 		exesAfter = len(sbj.oxes) - sbj.prgCnt -1
 		if exesAfter > sbj.midH:
 			exesAfter = sbj.midH
 		for i in range(exesAfter):
-			output += "  " + str_sub( sbj.oxes[sbj.prgCnt+i+1].unparse(), stop=istWidthMax) + '\n'
+			output += "  " + str_sub(
+				sbj.oxes[sbj.prgCnt+i+1].unparse().replace('\t', ' '),
+				stop=ist_maxX
+			) + '\n'
 
 		#blanks after code
 		return output + '\n' * (sbj.midH - exesAfter)
@@ -335,7 +360,7 @@ class obvRun:
 
 
 	#specific draw: seg dump
-	def drawSeg(sbj, seg, width, skipBegLines, inBold):
+	def drawSeg(sbj, seg, x, skipBegLines, inBold):
 		haveRemainingBytes  = True
 		etcDotsSpacingBlank = 2 + ADR_ON_HEX_DIGITS + SPACE_BETWEEN_ADR_AND_ROW
 
@@ -345,22 +370,22 @@ class obvRun:
 			boldStyle = Term__STYLE_BOLD
 
 		#seg name
-		output = Term__cup(width, 0) + Term__STYLE_RESET + boldStyle + ' '*etcDotsSpacingBlank + seg.name
+		output = Term__cup(x,0) + Term__STYLE_RESET + boldStyle + ' '*etcDotsSpacingBlank + seg.name
 
 		#"..." at the top
 		if skipBegLines != 0:
-			output += Term__cup(width, 2) + boldStyle + ' '*etcDotsSpacingBlank + "..."
+			output += Term__cup(x,2) + boldStyle + ' '*etcDotsSpacingBlank + "..."
 
 		#draw byte per byte, on whole dedicated height
 		lclAdr = int(ARCH_SIZE * skipBegLines)
 		gblAdr = seg.firstGblAdr + lclAdr
-		height = 2
+		y      = 2
 		for i in range(sbj.rowPerColm * ARCH_SIZE):
 
 			#new line
 			if i%ARCH_SIZE == 0:
-				height += 1
-				output += Term__cup(width, height) + Term__STYLE_RESET + boldStyle + '@' + hexOnN(gblAdr, ADR_ON_HEX_DIGITS) + ' '*SPACE_BETWEEN_ADR_AND_ROW
+				y += 1
+				output += Term__cup(x,y) + Term__STYLE_RESET + boldStyle + '@' + hexOnN(gblAdr, ADR_ON_HEX_DIGITS) + ' '*SPACE_BETWEEN_ADR_AND_ROW
 
 			#reset style in all cases
 			output += Term__STYLE_RESET + boldStyle
@@ -400,7 +425,7 @@ class obvRun:
 
 		#"..." at the bottom
 		if haveRemainingBytes:
-			output += Term__cup(width, height+1) + Term__STYLE_RESET + boldStyle + ' '*etcDotsSpacingBlank + "..."
+			output += Term__cup(x,y+1) + Term__STYLE_RESET + boldStyle + ' '*etcDotsSpacingBlank + "..."
 
 		#reset at end of colm draw
 		return output + Term__STYLE_RESET
@@ -408,62 +433,64 @@ class obvRun:
 
 
 	#specific draw: regs
-	def drawRegs(sbj, col1X, col2X, height):
+	def drawRegs(sbj, col1X, col2X, y):
 
 		#regs
-		output    = Term__cup(col1X, 0) + "[REGISTERS]"
-		height   += 2
+		output   = Term__cup(col1X,0) + "[REGISTERS]"
+		y       += 2
 		reg_keys = list(sbj.regs.keys())
 		for k in range(len(reg_keys)):
 
 			#on 2 colms
 			if k&1 == 0:
-				output += Term__cup(col1X, height)
+				output += Term__cup(col1X,y)
 			else:
-				output += Term__cup(col2X, height)
-				height += 1
+				output += Term__cup(col2X,y)
+				y += 1
 
 			#reg
 			key     = reg_keys[k]
 			output += key + ' ' + hexOnN(sbj.regs[key], ARCH_SIZE)
 
 		#height is useful for displaying further things under
-		return (output, height+1)
+		return (output,y+1)
 
 
 
 	#specific draw: stack frames
-	def drawStackFrames(sbj, col1X, col2X, height):
+	def drawStackFrames(sbj, col1X, col2X, y):
 		output = ""
 
 		#stack frames
-		width = col1X
+		x = col1X
 		for sf in range(len(sbj.stackFrames)):
-			height += 1
-			output += Term__cup(width, height) + "[StackFrame" + str(sf) + ']'
-			height += 1
+			y += 1
+			output += Term__cup(x,y) + "[StackFrame" + str(sf) + ']'
+			y += 1
+
+			#both colms will progress at their own speed
+			y1 = y
+			y2 = y
 
 			#datItms
-			height1       = height
-			height2       = height
 			curStackFrame = sbj.stackFrames[sf]
 			di_keys       = list(curStackFrame.keys())
 			for k in range(len(di_keys)):
 				di = curStackFrame[di_keys[k]]
-				output += Term__cup(width, height) + di.color + di.name + '/' + hexOnN(di.size, 4) + Term__STYLE_RESET
-				height += 1
+				output += Term__cup(x,y) + di.color + di.name + '/' + hexOnN(di.size, 4) + Term__STYLE_RESET
+				y += 1
 
 				#switching colm
 				if k&1 == 0:
-					height1 = height
-					height  = height2
-					width   = col2X
+					y1 = y
+					y  = y2
+					x  = col2X
 				else:
-					height2 = height
-					width   = col1X
+					y2 = y
+					x  = col1X
 
-		#height is useful for displaying further things under
-		return (output, height)
+		#y is useful for displaying further things under
+		return (output,y)
 
 
 
@@ -474,36 +501,35 @@ class obvRun:
 		output = Term__CLEAR + Term__STYLE_RESET
 
 		#ist
-		output += sbj.drawIstPannel(SEP_LINE_1_X)
+		output += sbj.drawIstPannel()
 
 		#sep line
-		output += sbj.drawVertLine(SEP_LINE_1_X)
+		output += sbj.drawVertLine(sbj.leftPannel_maxX)
 
 		#dat seg
-		width = SEP_LINE_1_X + SEP_LINE_PADDING
+		x = sbj.leftPannel_maxX + SEP_LINE_PADDING
 		for s in range(len(sbj.segs)):
 			output += sbj.drawSeg(
 				sbj.segs[s],
-				width,
+				x,
 				sbj.segs_lineShift[s],
 				s == sbj.segFocus
 			)
-			width  += SPACE_BETWEEN_COLM + COLM_LEN
+			x += SPACE_BETWEEN_COLM + COLM_LEN
 
 		#sep line
-		rightSideWidth = SEP_LINE_2_INV_X + SEP_LINE_PADDING
-		output += sbj.drawVertLine(sbj.width - rightSideWidth)
+		output += sbj.drawVertLine(x)
+		x      += 1 + SEP_LINE_PADDING
 
 		#next displays will be split in 2 colms
-		rightSideCol1X = sbj.width - SEP_LINE_2_INV_X
-		rightSideCol2X = sbj.width - int(rightSideWidth>>1) + SEP_LINE_PADDING
+		secondColmX = (sbj.width + x)>>1
 
 		#regs
-		o,h = sbj.drawRegs(rightSideCol1X, rightSideCol2X, 0)
+		o,y = sbj.drawRegs(x, secondColmX, 0)
 		output += o
 
 		#stack frames right under
-		o,h = sbj.drawStackFrames(rightSideCol1X, rightSideCol2X, h)
+		o,y = sbj.drawStackFrames(x, secondColmX, y)
 		output += o
 
 		#draw
