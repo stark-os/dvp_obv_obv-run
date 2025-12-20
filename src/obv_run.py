@@ -57,11 +57,13 @@ REGS      = {
 SEG_NAMES = ("DATA", "HEAP", "STACK")
 SEG_SIZES = [     0,   1024,    1024] #in bytes, "DATA" size will be set at init
 
+#display: spacing
+SEP_LINE_PADDING   = 0 #2
+SPACE_BETWEEN_COLM = 3 #6
+
 #display: seg colms
-SPACE_BETWEEN_ADR_AND_ROW = 2
-SPACE_BETWEEN_COLM        = 6
-ADR_ON_HEX_DIGITS         = 4
-COLM_LEN                  = 2 + ADR_ON_HEX_DIGITS + SPACE_BETWEEN_ADR_AND_ROW + (2*ARCH_SIZE) #1 for '@', 1 for mid-colm blank
+ADR_ON_HEX_DIGITS = 4
+COLM_LEN          = 3 + ADR_ON_HEX_DIGITS + (2*ARCH_SIZE) #1 for '@', 1 for space between adr & colm, 1 for mid-colm blank
 CHK_COLORS = (
 	Term__FCOLOR_BLACK + Term__BCOLOR_PURPLE,
 	Term__FCOLOR_BLACK + Term__BCOLOR_YELLOW,
@@ -77,8 +79,7 @@ CHK_COLORS = (
 UPDATE_DIMENSIONS_ON_KEYPRESS = True
 
 #display: pannels
-SEP_LINE_PADDING          = 2
-LEFT_PANNEL_WIDTH_RATIO_X = 0.3
+LEFT_PANNEL_WIDTH_RATIO_X = 0.25
 
 
 
@@ -139,19 +140,6 @@ def Obv_Run_init(filename):
 class obvRun:
 	def __init__(sbj, oxes, fctMap):
 
-		#display: general
-		sbj.width  = 0
-		sbj.height = 0
-		sbj.midH   = 0
-		sbj.updateDimensions()
-
-		#display: mem seg colms
-		sbj.curChkColor = 0
-		sbj.rowPerColm  = sbj.height-5 #seg name, space, "..." on top & bottom
-
-		#display: pannels (all based on the left pannel width
-		sbj.leftPannel_maxX = int(sbj.width * LEFT_PANNEL_WIDTH_RATIO_X)
-
 		#dat seg spc
 		sbj.datSegIdx     = sbj.getSegIdxByName("DATA")
 		sbj.lastDatLclAdr = 0
@@ -166,8 +154,6 @@ class obvRun:
 		#segs
 		sbj.segFocus          = 0
 		sbj.segs              = []
-		sbj.segs_lineShift    = []
-		sbj.segs_maxLineShift = []
 		prevSeg_lastGblAdr    = -1
 		for s in range(len(SEG_NAMES)):
 
@@ -176,13 +162,18 @@ class obvRun:
 			sbj.segs.append(curSeg)
 			prevSeg_lastGblAdr = curSeg.lastGblAdr
 
-			#lineShift range
-			sbj.segs_lineShift.append(0)
-			maxLineShift = 0
-			segLineNbr   = SEG_SIZES[s]>>3
-			if segLineNbr > sbj.rowPerColm:
-				maxLineShift = segLineNbr - sbj.rowPerColm
-			sbj.segs_maxLineShift.append(maxLineShift)
+		#init lineShifts & max
+		sbj.segs_lineShift    = [0] * len(SEG_NAMES)
+		sbj.segs_maxLineShift = [0] * len(SEG_NAMES)
+
+		#display
+		sbj.width           = 0
+		sbj.height          = 0
+		sbj.midH            = 0
+		sbj.curChkColor     = 0
+		sbj.rowPerColm      = 0
+		sbj.leftPannel_maxX = 0
+		sbj.updateDimensions() #=> also update lineShifts
 
 		#CPU ctx
 		sbj.regs   = REGS
@@ -293,10 +284,36 @@ class obvRun:
 	# -------- DISPLAY --------
 
 	#dynamic resize
+	def updateLineShifts(sbj):
+		for s in range(len(SEG_NAMES)):
+
+			#reset every lineShifts
+			sbj.segs_lineShift[s] = 0
+
+			#re-compute max lineShift
+			maxLineShift = 0
+			segLineNbr   = int(SEG_SIZES[s]/ARCH_SIZE)
+			if segLineNbr > sbj.rowPerColm:
+				maxLineShift = segLineNbr - sbj.rowPerColm
+
+			#update max lineShift
+			sbj.segs_maxLineShift[s] = maxLineShift
+
 	def updateDimensions(sbj):
+
+		#display: general
 		sbj.width  = Term__width()
 		sbj.height = Term__height()
 		sbj.midH   = int(sbj.height/2)-1
+
+		#display: segments
+		sbj.rowPerColm  = sbj.height-5 #seg name, space, "..." on top & bottom
+
+		#display: pannels (all based on the left pannel width)
+		sbj.leftPannel_maxX = int(sbj.width * LEFT_PANNEL_WIDTH_RATIO_X)
+
+		#update lineShifts also
+		sbj.updateLineShifts()
 
 
 
@@ -362,7 +379,7 @@ class obvRun:
 	#specific draw: seg dump
 	def drawSeg(sbj, seg, x, skipBegLines, inBold):
 		haveRemainingBytes  = True
-		etcDotsSpacingBlank = 2 + ADR_ON_HEX_DIGITS + SPACE_BETWEEN_ADR_AND_ROW
+		etcDotsSpacingBlank = 3 + ADR_ON_HEX_DIGITS
 
 		#display in bold style
 		boldStyle = ""
@@ -379,13 +396,13 @@ class obvRun:
 		#draw byte per byte, on whole dedicated height
 		lclAdr = int(ARCH_SIZE * skipBegLines)
 		gblAdr = seg.firstGblAdr + lclAdr
-		y      = 2
+		y      = 1
 		for i in range(sbj.rowPerColm * ARCH_SIZE):
 
 			#new line
 			if i%ARCH_SIZE == 0:
 				y += 1
-				output += Term__cup(x,y) + Term__STYLE_RESET + boldStyle + '@' + hexOnN(gblAdr, ADR_ON_HEX_DIGITS) + ' '*SPACE_BETWEEN_ADR_AND_ROW
+				output += Term__cup(x,y) + Term__STYLE_RESET + boldStyle + '@' + hexOnN(gblAdr, ADR_ON_HEX_DIGITS)
 
 			#reset style in all cases
 			output += Term__STYLE_RESET + boldStyle
@@ -507,7 +524,7 @@ class obvRun:
 		output += sbj.drawVertLine(sbj.leftPannel_maxX)
 
 		#dat seg
-		x = sbj.leftPannel_maxX + SEP_LINE_PADDING
+		x = sbj.leftPannel_maxX + 1 + SEP_LINE_PADDING
 		for s in range(len(sbj.segs)):
 			output += sbj.drawSeg(
 				sbj.segs[s],
